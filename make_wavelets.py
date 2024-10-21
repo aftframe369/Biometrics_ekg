@@ -3,36 +3,39 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import pywt
+import imageio
 
 
-with open("data.json", 'r') as f:
+with open("data.json", "r") as f:
     d = json.load(f)
 
-ids = sorted(d.keys())[:4]
+ids = sorted(d.keys())
 
-for i in ids:
-    heartbeats = d[i]["S1"][0][:4]
+for progress, i in enumerate(ids):
+    print(progress, " / ", len(ids))
+    person = d[i]
+    sessions = sorted(person.keys())
+    for session in sessions:
+        for rec_nr, recording in enumerate(person[session]):
+            for hb_nr, heartbeat in enumerate(recording):
+                if len(heartbeat) != 100:
+                    continue
+                heartbeat = np.asarray(heartbeat)
+                min, max = np.min(heartbeat), np.max(heartbeat)
+                heartbeat = heartbeat / max
+                n_scales = 128
+                scales = np.arange(1, n_scales + 1)
+                picture = np.zeros((128, 100, 3), float)
 
-    fig, axs = plt.subplots(nrows=4, ncols=4, figsize=(20, 20))
-    for hb, ax in zip(heartbeats, axs):
-        ax[0].plot(hb)
-        ax[0].spines['right'].set_visible(False)
-        ax[0].spines['top'].set_visible(False)
-        ax[0].set_ylabel('Scale')
-        ax[0].set_xlabel('Time')
+                for channel, wavelet in zip(range(3), ["mexh", "morl", "gaus5"]):
+                    coeffs1, freqs = pywt.cwt(
+                        heartbeat, scales, wavelet=wavelet)
+                    picture[:, :, channel] = coeffs1
 
-        # range of scales from 1 to n_scales
-        n_scales = 128
-        scales = np.arange(1, n_scales + 1)
-        wavelets = ["mexh", "morl", "gaus5"]
-        for i in range(1, 4):
-            # continuous wavelet transform wavelet = "mexh"  # mexh, morl, gaus8, gaus4, 'sym5', 'coif5'
-            coeffs1, freqs = pywt.cwt(hb, scales, wavelet=wavelets[i-1])
-            # create scalogram
-            ax[i].imshow(coeffs1, cmap='coolwarm', aspect='auto')
-            ax[i].set_title(wavelets[i-1])
-            ax[i].spines['right'].set_visible(False)
-            ax[i].spines['top'].set_visible(False)
-            ax[i].set_ylabel('Scale')
-            ax[i].set_xlabel('Time')
-    plt.show()
+                min, max = np.min(picture), np.max(picture)
+                picture = (picture - min) / (max - min) * (2**8 - 1)
+                picture = picture.astype(np.uint8)
+
+                name = f"db/{i}_{session}_{rec_nr}_{hb_nr}.png"
+                imageio.imwrite(name, picture)
+
